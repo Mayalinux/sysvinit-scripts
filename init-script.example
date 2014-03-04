@@ -1,0 +1,53 @@
+#!/bin/sh
+
+# See http://refspecs.linuxfoundation.org/LSB_4.1.0/LSB-Core-generic/LSB-Core-generic/tocsysinit.html
+### BEGIN INIT INFO
+# Provides:
+#
+# Required-Start:
+#
+# Required-Stop:
+#
+# Should-Start:
+#
+# Should-Stop:
+#
+# Default-Start:
+#
+# Default-Stop:
+#
+# Short-Description
+#
+# Description:
+#
+### END INIT INFO
+
+ACTION=$1 # Action to perform on the service
+
+. /lib/lsb/init-functions
+
+if [[ ! $# -eq 1 ]]; then
+	log_failure_msg "Invalid number of arguments"
+	exit 2 # Invalid number of arguments
+fi
+
+case $ACTION in
+start )
+	;;
+stop )
+	;;
+restart )
+	;;
+force-reload )
+	;;
+status )
+	;;
+reload | try-restart )
+	exit 3 # Unimplemented feature
+	;;
+* )
+	log_failure_msg "Invalid action"
+	exit 2 # Invalid argument
+esac
+
+exit 0 # All ok

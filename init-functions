@@ -1,0 +1,89 @@
+#!/bin/sh
+
+# init-functions: LSB compliant library for system initialization scripts
+#    Copyright (C) 2014 Alfredo Mungo <chimeranet89@gmail.com>
+#
+#    This program is free software: you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation, either version 3 of the License, or
+#    (at your option) any later version.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+
+[[ -z $LOGFILE ]] && LOGFILE=/var/log/rc
+
+##
+## Synopsis: log_success_msg msg
+##
+## msg:		Message to be logged
+##
+function log_success_msg () {
+	local msg="$1"
+
+	echo "SUCCESS: $msg" >>$LOGFILE
+}
+
+##
+## Synopsis: log_warning_msg msg
+##
+## msg:		Message to be logged
+##
+function log_warning_msg () {
+	local msg="$1"
+	
+	echo ">> WARNING: $msg" >&2
+	echo "WARNING: $msg" >>$LOGFILE
+}
+
+##
+## Synopsis: log_failure_msg msg
+##
+## msg:		Message to be logged
+##
+function log_failure_msg () {
+	local msg="$1"
+
+	echo ">> ERROR: $msg" >&2
+	echo "ERROR: $msg" >>$LOGFILE
+}
+
+##
+## Synopsis: start_daemon [-f] [-n nicelevel] pathname [args...]
+##
+## -f:			Start daemon even if another instance is already running
+## -n nicelevel:	Run with `nicelevel` nice level
+## pathname:		Path to the daemon executable
+## args:		Arguments to be passed to the daemon
+function start_daemon () {
+	# See http://refspecs.linuxfoundation.org/LSB_4.1.0/LSB-Core-generic/LSB-Core-generic/iniscrptfunc.html
+	log_failure_msg "start_daemon not implemented"
+}
+
+##
+## Synopsis: killproc [-p pidfile] pathname [signal]
+##
+## -p pidfile:		PID file of the process
+## pathname:		Path to the process executable
+## signal:		Signal to send to the process
+##
+## NOTE: If no signal is specified, the default behaviour is to send SIGTERM,
+##       wait for 5 seconds and then send SIGKILL.
+function killproc () {
+	# See http://refspecs.linuxfoundation.org/LSB_4.1.0/LSB-Core-generic/LSB-Core-generic/iniscrptfunc.html
+	log_failure_msg "killproc not implemented"
+}
+
+##
+## Synopsis: pidofproc [-p pidfile] pathname
+##
+## -p pidfile:		PID file of the process
+## pathname:		Path to the process executable
+##
+function pidofproc () {
+	# See http://refspecs.linuxfoundation.org/LSB_4.1.0/LSB-Core-generic/LSB-Core-generic/iniscrptfunc.html
+	log_failure_msg "pidofproc not implemented"
+}
+

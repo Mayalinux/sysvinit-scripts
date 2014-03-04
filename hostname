@@ -1,0 +1,60 @@
+#!/bin/sh
+
+# See http://refspecs.linuxfoundation.org/LSB_4.1.0/LSB-Core-generic/LSB-Core-generic/tocsysinit.html
+### BEGIN INIT INFO
+# Provides: hostname
+#
+# Required-Start:
+#
+# Required-Stop:
+#
+# Should-Start:
+#
+# Should-Stop:
+#
+# Default-Start: S
+#
+# Default-Stop:
+#
+# Short-Description: Sets the hostname of the machine
+#
+# Description: Sets the hostname of the machine from /etc/hostname
+#
+### END INIT INFO
+
+ACTION=$1 # Action to perform on the service
+HOSTFILE=/etc/hostname
+
+. /lib/lsb/init-functions
+
+if [[ ! $# -eq 1 ]]; then
+	log_failure_msg "Invalid number of arguments"
+	exit 2 # Invalid number of arguments
+fi
+
+function load_hostname () {
+	[[ -r $HOSTFILE ]] && hostname -F $HOSTFILE
+}
+
+case $ACTION in
+start | restart | reload | try-restart )
+	load_hostname
+	exit 0
+	;;
+stop )
+	exit 0
+	;;
+force-reload )
+	load_hostname || hostname localhost
+	exit 0
+	;;
+status )
+	hostname
+	exit 0
+	;;
+* )
+	log_failure_msg "Invalid action: $ACTION"
+	exit 2 # Invalid argument
+esac
+
+exit 0 # All ok

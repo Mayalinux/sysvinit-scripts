@@ -1,0 +1,159 @@
+#!/bin/sh
+
+# rcS: init script main file
+#    Copyright (C) 2014 Alfredo Mungo <chimeranet89@gmail.com>
+#
+#    This program is free software: you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation, either version 3 of the License, or
+#    (at your option) any later version.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+
+###
+### Usage: /etc/init.d/rcS {runlevel}
+###
+### runlevel:		the runlevel in which the system is entering
+###
+### {} arguments are mandatory, [] arguments are optional
+###
+### NOTE: To enable logging, create the LOGFILE defined below
+### TOOD: Add LOG_FILE size limiting mechanism
+###
+
+export PATH="$PATH:/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin"
+export LOGFILE=/var/log/rc
+
+ETC_DIR=/etc
+LOG_MAX_LINES=1000 # Max lines into the logfile
+
+shopt -s nullglob
+umask 640 # rw- r-- ---
+ulimit -f $((256 * 1024)) # Max file size in KiB
+ulimit -u 1024 # Max number of user processes
+ulimit -x 256 # Max number of file locks
+
+##
+## Send an action to a service
+##
+## Synopsis: actionService {path} {action}
+##
+## path:		The full path to the script of the service to send the action to
+## action:		The action to send (i.e.: start, stop)
+##
+function actionService () {
+	local path="$1"
+	local action="$2"
+	local svc=$(basename "$1")
+	local msg
+
+	local FMT_SVC="\e[36m"
+	local FMT_OK="\e[32m"
+	local FMT_WAIT="\e[33m"
+	local FMT_ERR="\e[5;31m"
+	local FMT_DEFAULT="\e[39m"
+
+	case $action in
+	start )
+		msg="Starting service"
+		;;
+	stop )
+		msg="Stopping service"
+		;;
+	* )
+		msg="Running action \"$action\" on"
+		;;
+	esac
+
+	echo "[$RUNLEVEL] ${msg} ${svc}..." >&3
+
+	local msg_full="${msg} ${FMT_SVC}${svc}${FMT_DEFAULT}"
+
+	echo -ne "[ ${FMT_WAIT}PROCESS${FMT_DEFAULT} ] ${msg_full}..."
+
+	local SVC_OUTPUT=$($path $action)
+
+	if [[ $? -eq 0 ]]; then
+		echo -e "\r[ ${FMT_OK}SUCCESS${FMT_DEFAULT} ] ${msg_full}..."
+
+		return 0
+	else
+		echo -e "\r[ ${FMT_ERR}FAILURE${FMT_DEFAULT} ] ${msg_full}..."
+		echo "* FAILURE" >&3
+
+		return 1
+	fi
+
+	[[ ! -z "$SVC_OUTPUT" ]] && echo "$SVC_OUTPUT" | awk "// { print \">>> $action: \" \$0 }"
+}
+
+##
+## Stop a service
+##
+## Synopsis: stopService {path}
+##
+## path:		The full path to the script of the service to stop
+##
+function stopService () {
+	local path="$1"
+
+	actionService "$path" stop
+}
+
+##
+## Start a service
+##
+## Synopsis: startService {path}
+##
+## path:		The full path to the script of the service to start
+##
+function startService () {
+	local path="$1"
+
+	# TODO: before starting the service, check if it has already started to avoid polluting the terminal with junk lines of fake starts
+	actionService "$path" start
+}
+
+# Require RUNLEVEL and PREVLEVEL. Command line overrides default
+[[ ! -z "$1" ]] && export RUNLEVEL=$1
+
+if ( [[ -z "$RUNLEVEL" ]] ||  [[ -z "$PREVLEVEL" ]] ); then
+	echo "Only init can run this script." >&2
+fi
+
+# Setup redirection
+if [[ -f $LOGFILE ]]; then
+	if [[ -w $LOGFILE ]]; then
+		exec 3>>$LOGFILE
+	else
+		exec 3>/dev/null
+	fi
+else
+	exec 3>/dev/null
+fi
+
+# Setup runlevel dir
+RUNLEVEL_DIR="$ETC_DIR/rc${RUNLEVEL}.d"
+
+# Exit if RUNLEVEL_DIR does not exist
+[[ ! -d $RUNLEVEL_DIR ]] && exit
+
+# If switching from a previous level, stop the unuseful services
+if [[ $PREVLEVEL != N ]]; then
+	# Stop services
+	for srv in $RUNLEVEL_DIR/K*; do
+		srv=$(realpath $srv)
+		stopService $srv
+	done
+fi
+
+# Run the new level services
+if [[ -d $RUNLEVEL_DIR ]]; then
+	for srv in $RUNLEVEL_DIR/S*; do
+		srv=$(realpath $srv)
+		startService $srv
+	done
+fi
