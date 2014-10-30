@@ -53,11 +53,11 @@ function log_failure_msg () {
 ##
 ## Synopsis: start_daemon [-f] [-n nicelevel] [-p pidfile] pathname [args...]
 ##
-## -f:			Start daemon even if another instance is already running
+## -f:			      Start daemon even if another instance is already running
 ## -n nicelevel:	Run with `nicelevel` nice level
-## -p pidfile: Use `pidfile` as the PID file for the daemon
-## pathname:		Path to the daemon executable
-## args:		Arguments to be passed to the daemon
+## -p pidfile:    Use `pidfile` as the PID file for the daemon
+## pathname:		  Path to the daemon executable
+## args:		      Arguments to be passed to the daemon
 function start_daemon () {
 	# See http://refspecs.linuxfoundation.org/LSB_4.1.0/LSB-Core-generic/LSB-Core-generic/iniscrptfunc.html
   local parms=($*)
@@ -67,7 +67,7 @@ function start_daemon () {
   local pids
   local proc_path
   local proc_args=()
-  local force
+  local force=no
 
   while [[ $i < ${#parms[*]} ]]; do # Scan $parms
     local parm=${parms[$i]}
@@ -114,10 +114,10 @@ function start_daemon () {
   [[ -r "$pidfile" ]] && pids="$(pidofproc -p "$pidfile" "$proc_path")"
 
   # Do not run the daemon if already running and not asked to force-run
-  [[ -n "$pids" ]] && [[ $force == no ]] && return
+  [[ -n "$pids" ]] && [[ $force == no ]] && return 0
 
   # Run the daemon
-  local pid=$(bash -c "nice -n $nicelevel $proc_path $proc_args 0</dev/null 1>/dev/null 2>/dev/null & echo \$!" >/dev/null)
+  local pid=$(bash -c "nice -n $nicelevel $proc_path $proc_args 0</dev/null 1>/dev/null 2>/dev/null & echo \$!" 2>/dev/null)
 
   # Save the new PID
   pids="$pids $pid"
@@ -160,11 +160,6 @@ function killproc () {
 
     [[ $switch_found == 'no' ]] && [[ -z "$proc_path" ]] && proc_path="$parm"
     [[ $switch_found == 'no' ]] && [[ -n "$proc_path" ]] && [[ -z "$sig" ]] && sig="$parm"
-
-    if [[ $switch_found == no ]] && [[ -n "$proc_path" ]] && [[ -n "$sig" ]]; then
-      log_failure_msg "killproc(): Too many arguments"
-      return 1
-    fi
 
     ((i++))
   done

@@ -6,7 +6,7 @@ LIBDIR=/lib
 SYSCONFDIR=/etc
 INIT_D_FILES=rcS local_fs hostname init-script.example
 
-.PHONY: install
+.PHONY: install test
 
 all:
 	$(warning Nothing to make. Run "make install" to install sysvinit-scripts.)
@@ -31,3 +31,6 @@ install:
 	$(LN) -fs $(SYSCONFDIR)/init.d/local_fs S0local_fs; \
 	$(LN) -fs $(SYSCONFDIR)/init.d/hostname S10hostname; \
 	popd
+
+test:
+	test/testcase.sh
