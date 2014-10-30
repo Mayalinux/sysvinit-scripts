@@ -21,9 +21,9 @@
 ## msg:		Message to be logged
 ##
 function log_success_msg () {
-	local msg="$1"
+	local msg="SUCCESS: $1"
 
-	echo "SUCCESS: $msg" >>$LOGFILE
+	echo "$msg" >>$LOGFILE
 }
 
 ##
@@ -32,10 +32,10 @@ function log_success_msg () {
 ## msg:		Message to be logged
 ##
 function log_warning_msg () {
-	local msg="$1"
+	local msg="WARNING: $1"
 	
-	echo ">> WARNING: $msg" >&2
-	echo "WARNING: $msg" >>$LOGFILE
+	echo ">> $msg" >&2
+	echo "$msg" >>$LOGFILE
 }
 
 ##
@@ -44,22 +44,68 @@ function log_warning_msg () {
 ## msg:		Message to be logged
 ##
 function log_failure_msg () {
-	local msg="$1"
+	local msg="ERROR: $1"
 
-	echo ">> ERROR: $msg" >&2
-	echo "ERROR: $msg" >>$LOGFILE
+	echo ">> $msg" >&2
+	echo "$msg" >>$LOGFILE
 }
 
 ##
-## Synopsis: start_daemon [-f] [-n nicelevel] pathname [args...]
+## Synopsis: start_daemon [-f] [-n nicelevel] [-p pidfile] pathname [args...]
 ##
 ## -f:			Start daemon even if another instance is already running
 ## -n nicelevel:	Run with `nicelevel` nice level
+## -p pidfile: Use `pidfile` as the PID file for the daemon
 ## pathname:		Path to the daemon executable
 ## args:		Arguments to be passed to the daemon
 function start_daemon () {
 	# See http://refspecs.linuxfoundation.org/LSB_4.1.0/LSB-Core-generic/LSB-Core-generic/iniscrptfunc.html
-	log_failure_msg "start_daemon not implemented"
+  local parms=("$*")
+  local i=0
+  local pidfile
+  local nicelevel=0
+  local pids
+  local proc_path
+  local proc_args=()
+  local force
+
+  while [[ $i < ${#parms[*]} ]]; do # Scan $parms
+    local parm=${parms[$i]}
+    local switch_found=no
+
+    [[ "$parm" == '-p' ]] && [[ -z "$proc_path" ]] && ((i++)) && pidfile=${parms[$i]} && switch_found=yes
+    [[ "$parm" == '-n' ]] && [[ -z "$proc_path" ]] && ((i++)) && nicelevel=${parms[$i]} && switch_found=yes
+    [[ "$parm" == '-f' ]] && [[ -z "$proc_path" ]] && force=yes && switch_found=yes
+    [[ ${parm:0:1} == '-' ]] && [[ ! $switch_found == yes ]] && [[ -z "$proc_path" ]] \
+      && log_error_msg "start_daemon(): Invalid parameter $parm" && return 1
+    [[ $switch_found == 'no' ]] && [[ -z "$proc_path" ]] && proc_path="$parm"
+    [[ $parm_found == 'no' ]] && [[ -n "$proc_path" ]] && proc_args="$proc_args $parm"
+
+    ((i++))
+  done
+
+  # Check whether a daemon has been specified
+  if [[ -z "$proc_path" ]]; then
+    log_error_msg "start_daemon(): No executable specified"
+    return 1
+  fi
+
+  # Set default PID file if none specified
+  [[ -z "$pidfile" ]] && pidfile=/var/run/$(basename "$proc_path").pid
+
+  # Read PIDs
+  [[ -r "$pidfile" ]] && pids="$(pidofproc -p "$pidfile" "$proc_path")"
+
+  # Do not run the daemon if already running and not asked to force-run
+  [[ -n "$pids" ]] && [[ $force == no ]] && return
+
+  # Run the daemon
+  local pid=$(bash -c "nice -n $nicelevel $proc_path $proc_args 0</dev/null 1>/dev/null 2>/dev/null & echo \$!" >/dev/null)
+
+  # Save the new PID
+  pids="$pids $pid"
+  pids="${pids/# /}"
+  echo $pids >$pidfile
 }
 
 ##
@@ -73,7 +119,53 @@ function start_daemon () {
 ##       wait for 5 seconds and then send SIGKILL.
 function killproc () {
 	# See http://refspecs.linuxfoundation.org/LSB_4.1.0/LSB-Core-generic/LSB-Core-generic/iniscrptfunc.html
-	log_failure_msg "killproc not implemented"
+  local parms=("$*")
+  local pidfile
+  local pids
+  local proc_path
+  local sig
+  local i=0
+  
+  while [[ $i < ${#parms[*]} ]]; do # Scan $parms
+    local parm=${parms[$i]}
+    local switch_found=no
+
+    [[ "$parm" == '-p' ]] && [[ -z "$proc_path" ]] && ((i++)) && pidfile=${parms[$i]} && switch_found=yes
+    [[ ${parm:0:1} == '-' ]] && [[ ! $switch_found == yes ]] && [[ -z "$proc_path" ]] \
+      && log_error_msg "killproc(): Invalid parameter $parm" && return 1
+    [[ $switch_found == 'no' ]] && [[ -z "$proc_path" ]] && proc_path="$parm"
+    [[ $switch_found == 'no' ]] && [[ -n "$proc_path" ]] && [[ -z "$sig" ]] && sig="$parm"
+    [[ $switch_found == 'no' ]] && [[ -n "$proc_path" ]] && [[ -n "$sig" ]] \
+      && log_error_msg "killproc(): Too many arguments" && return 1
+
+    ((i++))
+  done
+
+  # Set default PID file if none specified
+  [[ -z "$pidfile" ]] && pidfile=/var/run/$(basename "$proc_path").pid
+
+  # Read PIDs
+  [[ -r "$pidfile" ]] && pids="$(pidofproc -p "$pidfile" "$proc_path")"
+
+  # Kill PIDs
+  if [[ -n "$pids" ]]; then
+    for pid in $pids; do
+      if [[ -n "$sig" ]]; then # Send specified signal
+        kill $sig $pid
+      else # No signal specified, default behaviour
+        kill -SIGTERM -- $pid
+        
+        for (( i=0 ; i<5 ; i++ )); do
+          [[ ! -e /proc/$pid ]] && continue 2
+          sleep 1
+        done
+
+        kill -SIGKILL -- $pid
+      fi
+    done
+  else # None running
+    return 0
+  fi
 }
 
 ##
@@ -84,6 +176,35 @@ function killproc () {
 ##
 function pidofproc () {
 	# See http://refspecs.linuxfoundation.org/LSB_4.1.0/LSB-Core-generic/LSB-Core-generic/iniscrptfunc.html
-	log_failure_msg "pidofproc not implemented"
-}
+  local parms=("$*")
+  local pidfile
+  local pids
+  local proc_path
+  local i=0
+  
+  while [[ $i < ${#parms[*]} ]]; do # Scan $parms
+    local parm=${parms[$i]}
+    local switch_found=no
 
+    [[ "$parm" == '-p' ]] && [[ -z "$proc_path" ]] && ((i++)) && pidfile=${parms[$i]} && switch_found=yes
+    [[ ${parm:0:1} == '-' ]] && [[ ! $switch_found == yes ]] && [[ -z "$proc_path" ]] \
+      && log_error_msg "pidofproc(): Invalid parameter $parm" && return 1
+    [[ $switch_found == 'no' ]] && [[ -z "$proc_path" ]] && proc_path="$parm"
+
+    ((i++))
+  done
+
+  # Set default PID file if none specified
+  [[ -z "$pidfile" ]] && pidfile=/var/run/$(basename "$proc_path").pid
+
+  # Read PIDs
+  [[ -r "$pidfile" ]] && pids=($(sed -n '1{p;q}' $pidfile))
+
+  # Output running PIDs
+  local firstpid=yes
+  for pid in ${pids[@]}; do
+    [[ -e /proc/$pid ]] && ( [[ $firstpid == yes ]] && echo -n "$pid" && firstpid=no ) || echo -n " $pid"
+  done
+
+  return 0
+}
