@@ -87,7 +87,7 @@ function actionService () {
 		return 1
 	fi
 
-	[[ ! -z "$SVC_OUTPUT" ]] && echo "$SVC_OUTPUT" | awk "// { print \">>> $action: \" \$0 }"
+	[[ -n "$SVC_OUTPUT" ]] && echo "$SVC_OUTPUT" | awk "// { print \">>> $action: \" \$0 }"
 }
 
 ##
@@ -118,7 +118,7 @@ function startService () {
 }
 
 # Require RUNLEVEL and PREVLEVEL. Command line overrides default
-[[ ! -z "$1" ]] && export RUNLEVEL=$1
+[[ -n "$1" ]] && export RUNLEVEL=$1
 
 if ( [[ -z "$RUNLEVEL" ]] ||  [[ -z "$PREVLEVEL" ]] ); then
 	echo "Only init can run this script." >&2
@@ -127,6 +127,7 @@ fi
 # Setup redirection
 if [[ -f $LOGFILE ]]; then
 	if [[ -w $LOGFILE ]]; then
+    [[ $(wc -l $LOGFILE) -gt $LOG_MAX_LINES ]] && truncate -s 0 $LOGFILE
 		exec 3>>$LOGFILE
 	else
 		exec 3>/dev/null
