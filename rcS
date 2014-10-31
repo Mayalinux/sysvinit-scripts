@@ -27,7 +27,6 @@
 export PATH="$PATH:/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin"
 export LOGFILE=/var/log/rc
 
-ETC_DIR=/etc
 LOG_MAX_LINES=1000 # Max lines into the logfile
 
 shopt -s nullglob
@@ -45,16 +44,16 @@ ulimit -x 256 # Max number of file locks
 ## action:		The action to send (i.e.: start, stop)
 ##
 function actionService () {
-	local path="$1"
-	local action="$2"
-	local svc=$(basename "$1")
+	declare -r path="$1"
+	declare -r action="$2"
+	declare -r svc=$(basename "$1")
 	local msg
 
-	local FMT_SVC="\e[36m"
-	local FMT_OK="\e[32m"
-	local FMT_WAIT="\e[33m"
-	local FMT_ERR="\e[5;31m"
-	local FMT_DEFAULT="\e[39m"
+	declare -r FMT_SVC="\e[36m"
+	declare -r FMT_OK="\e[32m"
+	declare -r FMT_WAIT="\e[33m"
+	declare -r FMT_ERR="\e[5;31m"
+	declare -r FMT_DEFAULT="\e[39m"
 
 	case $action in
 	start )
@@ -87,7 +86,7 @@ function actionService () {
 		return 1
 	fi
 
-	[[ -n "$SVC_OUTPUT" ]] && echo "$SVC_OUTPUT" | awk "// { print \">>> $action: \" \$0 }"
+	[[ -n "$SVC_OUTPUT" ]] && echo "$SVC_OUTPUT" | sed "s/^/>>> $action: /"
 }
 
 ##
@@ -113,8 +112,61 @@ function stopService () {
 function startService () {
 	local path="$1"
 
-	# TODO: before starting the service, check if it has already started to avoid polluting the terminal with junk lines of fake starts
-	actionService "$path" start
+  "$path" status >/dev/null 2>/dev/null || actionService "$path" start
+}
+
+##
+## Get values from the INIT INFO block of a service file and prints them
+##
+## Synopsis: svcGet {val} {path}
+##
+## path:    The full path to the script of the service to read
+## val:     The name of the section to get the value of
+##
+## NOTE: Only single-line sections are supported
+##
+function svcGet () {
+  declare -r path="$2"
+  declare -r section="$1"
+
+  if [[ -r $path ]] && [[ -n $section ]]; then
+    awk '/### BEGIN INIT INFO/,/### END INIT INFO/ { print; }' <"$path" | grep -E "^[ \t]*#+[ \t]*$section[ \t]*:" | sed "s/^[#  \t]*$section[ \t]*:[ \t]*//"
+  else # Invalid arguments
+    echo "svcGet(): Invalid arguments." >&2
+  fi
+}
+
+##
+## Recursively starts all the services related to {service} in SVC_START and
+## then run it
+##
+## Synopsis: svcStartList {service}
+##
+## service: The root service to start
+##
+function svcStartList () {
+  declare -r service="$1"
+  
+  for svc in ${SVC_START[@]}; do
+    if [[ $svc == $service ]]; then # Needs something to start before it
+      for s in ${SVC_START[$service]}; do
+        if [[ ${s:0:1} != - ]]; then # Required-Start service
+          if ! startService $s; then
+            log_error_msg "Service $s required by $service could not be started"
+            return 1
+          fi
+        else # Should-Start
+          svcStart ${s:1}
+        fi
+      done
+
+      startService /etc/init.d/$service
+      unset SVC_START[$service]
+      return 0
+    fi
+  done
+
+  return 0
 }
 
 # Require RUNLEVEL and PREVLEVEL. Command line overrides default
@@ -137,7 +189,7 @@ else
 fi
 
 # Setup runlevel dir
-RUNLEVEL_DIR="$ETC_DIR/rc${RUNLEVEL}.d"
+RUNLEVEL_DIR="/etc/rc${RUNLEVEL}.d"
 
 # Exit if RUNLEVEL_DIR does not exist
 [[ ! -d $RUNLEVEL_DIR ]] && exit
@@ -145,16 +197,92 @@ RUNLEVEL_DIR="$ETC_DIR/rc${RUNLEVEL}.d"
 # If switching from a previous level, stop the unuseful services
 if [[ $PREVLEVEL != N ]]; then
 	# Stop services
+  declare -A SVC_KILL
 	for srv in $RUNLEVEL_DIR/K*; do
-		srv=$(realpath $srv)
-		stopService $srv
+		srv=$(basename $(realpath -LP $srv))
+    SVC_KILL[$srv]="$(svcGet Required-Stop /etc/init.d/$srv | sed 's/\$//g') $(svcGet Should-Stop /etc/init.d/$srv | sed -e 's/\$//g' -e 's/\([a-zA-Z_]\{1,\}\)/-\1/g)"
 	done
 fi
 
 # Run the new level services
 if [[ -d $RUNLEVEL_DIR ]]; then
+  declare -A SVC_START
 	for srv in $RUNLEVEL_DIR/S*; do
-		srv=$(realpath $srv)
-		startService $srv
+		srv=$(basename $(realpath -LP $srv))
+
+    SVC_START[$srv]="$(svcGet Required-Start /etc/init.d/$srv | sed 's/\$//g') $(svcGet Should-Start /etc/init.d/$srv | sed -e 's/\$//g' -e 's/\([a-zA-Z_]\{1,\}\)/-\1/g)"
 	done
 fi
+
+# Remove from the KILL list if still needed
+for ksvc in ${SVC_KILL[@]}; do
+  for ssvc in ${SVC_START[@]}; do
+    if [[ $ksvc == $ssvc ]]; then # Kill svc is also a start svc (should never happen in sane environment)
+      unset SVC_KILL[$ksvc]
+      continue 2
+    else # Kill svc is not in the start list
+      for s in ${SVC_START[$ssvc]}; do
+        [[ ${s:0:1} == - ]] && s=${s:1}
+        if [[ $ksvc == $s ]]; then
+          unset SVC_KILL[$ksvc]
+          continue 3
+        fi
+      done
+    fi
+  done
+done
+
+# Limit cycles to avoid cyclic dependencies inite loops
+i=0
+declare -r LOOP_LIMIT=10000
+
+# Kill services
+while [[ -n "${SVC_KILL[@]}" ]]; do
+  if [[ $i -gt $LOOP_LIMIT ]]; then
+    log_error_msg "Too many iterations, terminating kill phase"
+    break
+  fi
+
+  let i++
+
+  for ksvc in ${SVC_KILL[@]}; do
+    for sksvc in ${SVC_KILL[@]}; do
+      slist=${SVC_KILL[$sksvc]}
+      
+      if echo $slist | grep -qE "(^|[ ]*)$ksvc($|[ ]*)"; then # Service is still needed, skip it
+        continue 2
+      fi
+    done
+  
+    # Service not needed, kill it
+    for s in ${SVC_KILL[$ksvc]}; do
+      if [[ ${s:0:1} == - ]]; then # Should-Stop service
+        startService /etc/init.d/${s:1}
+      else
+        if ! startService /etc/init.d/$s; then # Required-Stop service
+          log_failure_msg "Unable to start required service $s"
+          continue 
+        fi
+      fi
+      
+    done
+  
+    stopService /etc/init.d/$ksvc
+    unset SVC_KILL[$ksvc]
+  done
+done
+
+# Start services
+i=0
+while [[ -n "${SVC_START[@]}" ]]; do
+  if [[ $i -gt $LOOP_LIMIT ]]; then
+    log_error_msg "Too many iterations, terminating start phase"
+    break
+  fi
+
+  let i++
+
+  for svc in ${SVC_START[@]}; do
+    svcStartList $svc
+  done
+done
