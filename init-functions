@@ -74,13 +74,13 @@ function start_daemon () {
     local switch_found=no
 
     if [[ "$parm" == '-p' ]] && [[ -z "$proc_path" ]]; then
-      ((i++))
+      let i++
       pidfile=${parms[$i]}
       switch_found=yes
     fi
 
     if [[ "$parm" == '-n' ]] && [[ -z "$proc_path" ]]; then
-      ((i++))
+      let i++
       nicelevel=${parms[$i]}
       switch_found=yes
     fi
@@ -98,7 +98,7 @@ function start_daemon () {
     [[ $switch_found == 'no' ]] && [[ -z "$proc_path" ]] && proc_path="$parm"
     [[ $parm_found == 'no' ]] && [[ -n "$proc_path" ]] && proc_args="$proc_args $parm"
 
-    ((i++))
+    let i++
   done
 
   # Check whether a daemon has been specified
@@ -148,7 +148,7 @@ function killproc () {
     local switch_found=no
 
     if [[ "$parm" == '-p' ]] && [[ -z "$proc_path" ]]; then
-      ((i++))
+      let i++
       pidfile=${parms[$i]}
       switch_found=yes
     fi
@@ -161,7 +161,7 @@ function killproc () {
     [[ $switch_found == 'no' ]] && [[ -z "$proc_path" ]] && proc_path="$parm"
     [[ $switch_found == 'no' ]] && [[ -n "$proc_path" ]] && [[ -z "$sig" ]] && sig="$parm"
 
-    ((i++))
+    let i++
   done
 
   # Set default PID file if none specified
@@ -210,7 +210,7 @@ function pidofproc () {
     local switch_found=no
 
     if [[ "$parm" == '-p' ]] && [[ -z "$proc_path" ]]; then
-      ((i++))
+      let i++
       pidfile=${parms[$i]}
       switch_found=yes
     fi
@@ -224,7 +224,7 @@ function pidofproc () {
       proc_path="$parm"
     fi
 
-    ((i++))
+    let i++
   done
 
   # Set default PID file if none specified
