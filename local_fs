@@ -5,7 +5,7 @@
 ###
 
 ### BEGIN INIT INFO
-# Provides: local_fs
+# Provides: $local_fs
 #
 # Default-Start: S
 #
