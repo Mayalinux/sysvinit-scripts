@@ -14,91 +14,105 @@
 # Short-Description: Mounts/unmounts local filesystems
 #
 # Description:
-#  Mounts and unmounts local filesystems, including;
-#   - The proc filesystem (not unmounted)
-#   - The sysfs filesystem
-#   - The devpts filesystem
-#   - Swap filesystems
-#   - /etc/fstab and /etc/mtab filesystems
-#   - Root filesystem
-#   - /var/run filesystem
-#	
-#   NOTE: If /etc/fstab exists, other filesystems are skipped during
-#         mount operation.
-#   NOTE: If /etc/mtab exists, other filesystems are skipped during
-#         umount operation.
-#   CAUTION: Never call this script manually
+#  Mounts and unmounts local filesystems, including.
+#
+#  CAUTION: Never call this script manually
 #
 ### END INIT INFO
 
-ACTION=$1
-FSTAB=/etc/fstab
-MTAB=/etc/mtab
-ROOTDEV=/dev/sdb1
-UTMPFILE=/var/run/utmp
+declare -r ACTION=$1
+declare -r FSTAB=/etc/fstab
+declare -r MTAB=/etc/mtab
+declare -r UTMPFILE=/var/run/utmp
+declare -r PROCMOUNTS=/proc/mounts
 
 . /lib/lsb/init-functions
 
 if [[ ! $# -eq 1 ]]; then
-	log_failure_msg "Invalid number of arguments"
-	exit 2 # Invalid number of arguments
+  log_failure_msg "Invalid number of arguments"
+  exit 2 # Invalid number of arguments
 fi
 
 case $ACTION in
 start )
-	mkdir -p /proc /dev/{pts,shm} /sys /var/run
-	truncate -c -s 0 $MTAB
-	UTMP=$(<$UTMPFILE)
+  mkdir -p /proc /dev/{pts,shm} /var/run
+  [[ ! -L $MTAB ]] && [[ -r $PROCMOUNTS ]] && rm -f $MTAB && ln -s $PROCMOUNTS $MTAB
 
-	# Fallback is no fstab is provided, otherwise mount them all
-	if [[ ! -r $FSTAB ]]; then
-		mount -t proc none /proc
-		mount -t devpts none /dev/pts
-		mount -t sysfs none /sys
-		mount -t tmpfs none /var/run
-		mount -t tmpfs none /tmp
-	else
-		mount -a
-	fi
+  UTMP=$(<$UTMPFILE)
 
-	# Let utmp survive mounting on its directory
-	echo "$UTMP" >$UTMPFILE
-	;;
+  # IF fstab is provided, mount the specified partitions
+  [[ -r $FSTAB ]] && mount -a
+
+  # Let utmp survive mounting on its directory
+  echo "$UTMP" >$UTMPFILE
+  ;;
 stop )
-	if [[ ! -r $MTAB ]]; then
-		# DO NOT umount /proc
-		umount -n /dev/pts
-		umount -n /sys
-		umount -n /var/run
-		umount -n /tmp
-	else
-		umount -a
-		swapoff -a
-	fi
+  # If mtab does not exis, try linking it to mounts
+  if [[ ! -r $MTAB ]] && [[ -f $PROCMOUNTS ]]; then
+    log_warning_msg "$MTAB not found. Linking to ${PROCMOUNTS}..."
+    ln -s $PROCMOUNTS $MTAB
+  else
+    log_failure_msg "No $MTAB or $PROCMOUNTS found."
+  fi
 
-	# Close the log file descriptor
-	# FIXME: Add code to close ALL file descriptors (/dev/fd)
-	exec 3>&-
+  # Umount filesystems
+  if [[ ! -r $MTAB ]]; then
+    # DO NOT umount /proc and /dev
+    umount -n /dev/shm
+    umount -n /dev/pts
+    umount -n /sys
+    umount -n /var/run
+    umount -n /tmp
+  else
+    umount -a
+  fi
 
-	# Remount root read-only
-	mount -n -o remount,ro $ROOTDEV /
-	sync
-	;;
+  # Disable swap
+  swapoff -a
+
+  # If there is no fstab, try to find / in mtab
+  if [[ -r $FSTAB ]]; then
+    ROOTDEV=
+  else
+    if [[ -r $MTAB ]]; then
+      for mpoint in $(awk '$2 == "/" { print $1; }' <$MTAB); do
+        [[ -b $mpoint ]] && ROOTDEV=$mpoint
+      done
+    else
+      log_error_msg "Unable to retrieve root device, root directory might be not be correctly unmounted."
+    fi
+  fi
+
+  # Close all the open file descriptors
+  for fd in /proc/$$/*; do
+    exec $fd>&-
+  done
+
+  # Remount root read-only
+  CONSOLE=/dev/null
+  [[ -c /dev/console ]] && CONSOLE=/dev/console
+
+  mount -no remount,ro $ROOTDEV / >/dev/null 2>$CONSOLE
+
+  # Flush drive buffers
+  sync
+  ;;
 restart )
-	# Avoid remounting everything
-	;;
+  # Avoid remounting everything
+  exit 3 # Unimplemented feature
+  ;;
 force-reload )
-	exit 3 
-	;;
+  exit 3 # Unimplemented feature
+  ;;
 status )
-	exit 4 # Unknown status
-	;;
+  exit 4 # Unknown status
+  ;;
 reload | try-restart )
-	exit 3 # Unimplemented feature
-	;;
+  exit 3 # Unimplemented feature
+  ;;
 * )
-	log_failure_msg "Invalid action"
-	exit 2 # Invalid argument
+  log_failure_msg "Invalid action"
+  exit 2 # Invalid argument
 esac
 
 exit 0 # All ok
